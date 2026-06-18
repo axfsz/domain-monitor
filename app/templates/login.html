@@ -4,101 +4,65 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>登录 - Domain Monitor</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=20260618-2">
 </head>
 <body class="login-body">
-  <div class="login-shell">
-    <section class="login-hero">
-      <div class="login-topline">
-        <span>NOC CONTROL PANEL</span>
-        <span>ZONE CN-SH</span>
-        <span>SECURE ACCESS ENABLED</span>
-      </div>
-      <div class="login-badge">统一访问入口</div>
-      <h1>Domain Monitor</h1>
-      <p class="login-subtitle">面向运维与监控场景的科技大屏入口，集中查看域名、链路质量、证书与告警状态。</p>
-      <div class="login-status-board">
-        <div class="status-item">
-          <span>系统状态</span>
-          <strong>ONLINE</strong>
-        </div>
-        <div class="status-item">
-          <span>巡检维度</span>
+  <div class="auth-layout">
+    <section class="auth-hero">
+      <div class="auth-badge">Domain Monitor</div>
+      <h1>统一域名监控入口</h1>
+      <p class="auth-summary">聚合域名巡检、证书到期、可用性检测和告警能力，用更清晰的方式管理你的监控面板。</p>
+      <div class="auth-grid">
+        <div class="auth-stat">
+          <span>巡检能力</span>
           <strong>DNS / HTTP / SSL</strong>
+          <small>覆盖域名解析、连通性与证书状态</small>
         </div>
-        <div class="status-item">
-          <span>接入能力</span>
-          <strong>Prometheus / Grafana</strong>
+        <div class="auth-stat">
+          <span>指标接入</span>
+          <strong>Prometheus</strong>
+          <small>支持指标采集与 Grafana 看板展示</small>
         </div>
-      </div>
-      <div class="login-feature-list">
-        <div class="login-feature">
-          <strong>全链路巡检</strong>
-          <span>统一查看域名状态、响应时间和异常告警</span>
-        </div>
-        <div class="login-feature">
-          <strong>多维指标</strong>
-          <span>内置 Prometheus 指标与 Grafana 看板接入能力</span>
-        </div>
-        <div class="login-feature">
-          <strong>权限管理</strong>
-          <span>支持管理员与普通用户分级访问控制</span>
-        </div>
-      </div>
-      <div class="login-tips">
-        <span>Web 面板</span>
-        <span>Prometheus Metrics</span>
-        <span>Grafana Dashboard</span>
-      </div>
-      <div class="login-telemetry">
-        <div class="telemetry-card">
-          <span>告警链路</span>
-          <strong>通知联动</strong>
-          <small>Telegram / 企业微信 / Metrics</small>
-        </div>
-        <div class="telemetry-card">
-          <span>监控视图</span>
-          <strong>统一总览</strong>
-          <small>域名状态、证书余量、响应时延</small>
+        <div class="auth-stat">
+          <span>通知链路</span>
+          <strong>告警联动</strong>
+          <small>支持 Telegram 与企业微信通知</small>
         </div>
       </div>
     </section>
 
-    <section class="login-panel">
-      <form class="login-card" method="post" action="/login">
-        <div class="login-card-header">
-          <div class="login-logo">DM</div>
+    <section class="auth-panel">
+      <form class="auth-card" method="post" action="/login">
+        <div class="auth-card-head">
+          <div class="auth-logo">DM</div>
           <div>
             <h2>欢迎登录</h2>
-            <p>请输入账号密码进入监控平台控制台</p>
+            <p>请输入账号密码进入监控控制台</p>
           </div>
         </div>
 
         {% if request.query_params.get('error') %}
-        <div class="error-text">账号或密码错误，请检查后重试</div>
+        <div class="auth-error">账号或密码错误，请检查后重试</div>
         {% endif %}
 
-        <label class="login-field">
+        <label class="auth-field">
           <span>用户名</span>
           <input name="username" placeholder="请输入用户名" autocomplete="username" required>
         </label>
 
-        <label class="login-field">
+        <label class="auth-field">
           <span>密码</span>
           <input name="password" type="password" placeholder="请输入密码" autocomplete="current-password" required>
         </label>
 
-        <button type="submit" class="login-submit">进入系统</button>
+        <button type="submit" class="auth-submit">进入系统</button>
 
-        <div class="login-inline-status">
-          <span><i></i> 控制台链路正常</span>
-          <span><i></i> 会话安全校验已启用</span>
+        <div class="auth-meta">
+          <span>安全会话已启用</span>
+          <span>访问地址：/login</span>
         </div>
 
-        <div class="login-help">
-          <div>访问地址：/login</div>
-          <div>如为首次部署，请使用环境变量中的管理员账号登录</div>
-        </div>
+        <div class="auth-help">首次部署请使用环境变量中的管理员账号登录</div>
       </form>
     </section>
   </div>
