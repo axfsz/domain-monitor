@@ -1,16 +1,35 @@
-from datetime import datetime
 import httpx
 from config import WECHAT_WEBHOOK_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTIFY_CHANNEL, DAILY_REPORT_CHANNEL
+from time_utils import format_local_with_label
+
+def classify_http_notice(result: dict) -> str:
+    code = result.get("http_code")
+    if code is None:
+        return "检测异常"
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "检测异常"
+    if 500 <= code < 600:
+        return "服务端异常"
+    if 400 <= code < 500:
+        return "请求异常"
+    if 300 <= code < 400:
+        return "重定向异常"
+    if 100 <= code < 200:
+        return "信息响应异常"
+    return "状态异常"
 
 def build_wechat_markdown(result: dict, recovered: bool = False) -> str:
+    notice_type = classify_http_notice(result)
     if recovered:
         title = "✅ 域名恢复通知"
         color = "info"
     elif result.get("alert_level") == "critical":
-        title = "🔥 域名严重告警"
+        title = f"🔥 域名严重告警 - {notice_type}"
         color = "warning"
     else:
-        title = "🚨 域名异常告警"
+        title = f"🚨 域名告警 - {notice_type}"
         color = "warning"
     return f"""
 # {title}
@@ -18,7 +37,8 @@ def build_wechat_markdown(result: dict, recovered: bool = False) -> str:
 > 域名：<font color=\"{color}\">{result.get('domain','-')}</font>
 > 分组：{result.get('group_name','default')}
 > 标签：{result.get('tags','-')}
-> 状态：<font color=\"{color}\">{result.get('status','-')}</font>
+> 告警类型：{notice_type}
+> 当前状态：<font color=\"{color}\">{result.get('status','-')}</font>
 > 探测节点：{result.get('agent_name','local')} / {result.get('agent_region','-')}
 
 **HTTP 检测**
@@ -42,17 +62,19 @@ def build_wechat_markdown(result: dict, recovered: bool = False) -> str:
 > <font color=\"{color}\">{result.get('error') or '-'}</font>
 
 ---
-时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+时间：{format_local_with_label()}
 系统：Domain Monitor
 """.strip()
 
 def build_plain_text(result: dict, recovered: bool = False) -> str:
-    title = "✅ 域名恢复通知" if recovered else ("🔥 域名严重告警" if result.get("alert_level") == "critical" else "🚨 域名异常告警")
+    notice_type = classify_http_notice(result)
+    title = "✅ 域名恢复通知" if recovered else (f"🔥 域名严重告警 - {notice_type}" if result.get("alert_level") == "critical" else f"🚨 域名告警 - {notice_type}")
     return f"""{title}
 ━━━━━━━━━━━━━━━━━━
 🌐 域名: {result.get('domain','-')}
 📁 分组: {result.get('group_name','default')}
 🏷 标签: {result.get('tags','-')}
+🧭 类型: {notice_type}
 📌 状态: {result.get('status','-')}
 🛰 节点: {result.get('agent_name','local')} / {result.get('agent_region','-')}
 
@@ -65,17 +87,22 @@ Whois剩余: {result.get('whois_days_left','-')} 天
 Ping: {result.get('ping_ok','-')}
 
 错误: {result.get('error') or '-'}
-时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+时间: {format_local_with_label()}
 """.strip()
 
 def build_daily_report_text(summary: dict) -> str:
     lines = [
         "📊 Domain Monitor 每日巡检报告",
         "━━━━━━━━━━━━━━━━━━",
-        f"日期: {summary.get('date')}",
-        f"总数: {summary.get('total')} | 正常: {summary.get('ok')} | 警告: {summary.get('warning')} | 异常: {summary.get('error')}",
-        f"SSL 15天内到期: {summary.get('ssl_soon')}",
-        f"Whois 30天内到期: {summary.get('whois_soon')}",
+        f"日期: {summary.get('date')} 北京时间",
+        "",
+        "概览统计",
+        f"- 总数: {summary.get('total')}",
+        f"- 正常: {summary.get('ok')}",
+        f"- 警告: {summary.get('warning')}",
+        f"- 异常: {summary.get('error')}",
+        f"- SSL 15天内到期: {summary.get('ssl_soon')}",
+        f"- Whois 30天内到期: {summary.get('whois_soon')}",
         "",
         "异常/警告明细:",
     ]
@@ -83,11 +110,15 @@ def build_daily_report_text(summary: dict) -> str:
     if not bad:
         lines.append("✅ 暂无异常")
     else:
-        for item in bad[:30]:
-            lines.append(f"- {item.get('domain')} [{item.get('group_name')}] {item.get('status')} | {item.get('error') or '-'}")
+        for index, item in enumerate(bad[:30], start=1):
+            detail = item.get("error") or "-"
+            lines.append(
+                f"{index}. {item.get('domain')} [{item.get('group_name')}] {item.get('status')} | HTTP {item.get('http_code') or '-'}"
+            )
+            lines.append(f"   原因: {detail}")
         if len(bad) > 30:
             lines.append(f"... 其余 {len(bad)-30} 条已省略")
-    lines.extend(["", f"系统时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+    lines.extend(["", f"系统时间: {format_local_with_label()}"])
     return "\n".join(lines)
 
 async def _send_telegram_text(text: str):

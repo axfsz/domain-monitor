@@ -6,13 +6,16 @@ from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
 from metrics import update_domain_metrics, domain_alert_total
+from time_utils import now_local, now_local_naive
+
+HTTP_5XX_ERROR_THRESHOLD = 5
 
 def in_silence_window(policy: dict) -> bool:
     start = policy.get("silence_start")
     end = policy.get("silence_end")
     if not start or not end:
         return False
-    now = datetime.now().time()
+    now = now_local().time()
     st = datetime.strptime(start, "%H:%M").time()
     et = datetime.strptime(end, "%H:%M").time()
     if st < et:
@@ -35,6 +38,38 @@ def get_policy(group_id: int):
             p = db.execute(text("SELECT * FROM alert_policies WHERE name='default' ORDER BY id DESC LIMIT 1")).mappings().fetchone()
         return dict(p) if p else {"fail_threshold": 3, "recover_threshold": 2, "escalation_minutes": 15}
 
+def get_consecutive_http_5xx_count(domain_id: int) -> int:
+    with get_db() as db:
+        rows = db.execute(text("""
+        SELECT http_code
+        FROM check_results
+        WHERE domain_id=:id AND is_summary=true
+        ORDER BY id DESC
+        LIMIT 20
+        """), {"id": domain_id}).fetchall()
+    streak = 0
+    for row in rows:
+        code = row[0]
+        if code is not None and 500 <= int(code) < 600:
+            streak += 1
+        else:
+            break
+    return streak
+
+def classify_http_issue(code: int, expected: set[int], current_5xx_streak: int) -> tuple[str, str]:
+    expected_list = sorted(expected)
+    if 500 <= code < 600:
+        if current_5xx_streak >= HTTP_5XX_ERROR_THRESHOLD:
+            return "error", f"HTTP {code} 服务端错误，已连续 {current_5xx_streak} 次 5xx，状态升级为 error，期望 {expected_list}"
+        return "warning", f"HTTP {code} 服务端错误，已连续 {current_5xx_streak} 次 5xx，未达 {HTTP_5XX_ERROR_THRESHOLD} 次前页面显示为 warning，期望 {expected_list}"
+    if 400 <= code < 500:
+        return "warning", f"HTTP {code} 客户端请求异常，不在期望 {expected_list}"
+    if 300 <= code < 400:
+        return "warning", f"HTTP {code} 重定向响应，不在期望 {expected_list}"
+    if 100 <= code < 200:
+        return "warning", f"HTTP {code} 信息响应，不在期望 {expected_list}"
+    return "warning", f"HTTP {code} 状态异常，不在期望 {expected_list}"
+
 async def process_alert(result: dict, policy: dict):
     domain_id = result["domain_id"]
     status = result["status"]
@@ -55,13 +90,13 @@ async def process_alert(result: dict, policy: dict):
         if status in ("error", "warning"):
             fail_count = old_fail_count + 1
             success_count = 0
-            first_failed_at = old_first_failed_at or datetime.now()
+            first_failed_at = old_first_failed_at or now_local_naive()
             if fail_count >= fail_threshold and last_alert_status != status:
                 should_alert = True
             if last_alert_status in ("error", "warning") and not old_escalated and first_failed_at:
                 if isinstance(first_failed_at, str):
                     first_failed_at = datetime.fromisoformat(first_failed_at)
-                if datetime.now() - first_failed_at >= timedelta(minutes=escalation_minutes):
+                if now_local_naive() - first_failed_at >= timedelta(minutes=escalation_minutes):
                     should_escalate = True
                     should_alert = True
         else:
@@ -97,7 +132,7 @@ async def process_alert(result: dict, policy: dict):
             "fail_count": fail_count,
             "success_count": success_count,
             "last_alert_status": new_last_alert_status,
-            "last_alert_at": datetime.now() if should_alert else (state["last_alert_at"] if state else None),
+            "last_alert_at": now_local_naive() if should_alert else (state["last_alert_at"] if state else None),
             "first_failed_at": first_failed_at,
             "escalated": True if should_escalate else (False if recovered else old_escalated),
             "last_error": current_error,
@@ -131,6 +166,7 @@ async def check_one_domain(row):
     port = int(row.get("port") or (443 if protocol == "https" else 80))
     expected = parse_expected_statuses(row.get("expected_statuses"))
     keyword = row.get("keyword") or ""
+    previous_5xx_streak = get_consecutive_http_5xx_count(row["id"])
     result = _base_result(row)
     errors = []
     worst = "ok"
@@ -157,8 +193,8 @@ async def check_one_domain(row):
                     if first_code is None:
                         first_code = code
                     if code not in expected:
-                        item["status"] = "error" if code >= 500 or code == 0 else "warning"
-                        item["error"] = f"URL {path} 状态码 {code} 不在期望 {sorted(expected)}"
+                        current_5xx_streak = previous_5xx_streak + 1 if 500 <= code < 600 else 0
+                        item["status"], item["error"] = classify_http_issue(code, expected, current_5xx_streak)
                     elif keyword and not keyword_ok:
                         item["status"] = "warning"
                         item["error"] = f"URL {path} 未匹配关键字：{keyword}"
@@ -186,7 +222,7 @@ async def check_one_domain(row):
                 worst = "warning"
                 errors.append(f"SSL 证书即将过期，剩余 {result['ssl_days_left']} 天")
         if row.get("check_whois", True):
-            result["whois_expire_at"], result["whois_days_left"], whois_error = check_whois_expire(domain)
+            result["whois_expire_at"], result["whois_days_left"], _ = check_whois_expire(domain)
             if result["whois_days_left"] is not None:
                 if result["whois_days_left"] < 0:
                     worst = "error"
@@ -233,7 +269,7 @@ def build_daily_summary():
     rows = latest_summary_rows()
     bad = [r for r in rows if r.get("status") in ("warning", "error")]
     return {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": now_local().strftime("%Y-%m-%d"),
         "total": len(rows),
         "ok": len([r for r in rows if r.get("status") == "ok"]),
         "warning": len([r for r in rows if r.get("status") == "warning"]),

@@ -1,16 +1,16 @@
 import asyncio
 import time
-from datetime import datetime
 from config import CHECK_INTERVAL_SECONDS, DAILY_REPORT_ENABLED, DAILY_REPORT_TIME
 from database import init_db
 from auth import ensure_admin_user
 from monitor import check_all_domains, build_daily_summary
 from notify import send_daily_report
+from time_utils import now_local
 
 def _should_send_daily(last_sent_date: str | None) -> bool:
     if not DAILY_REPORT_ENABLED:
         return False
-    now = datetime.now()
+    now = now_local()
     today = now.strftime("%Y-%m-%d")
     if last_sent_date == today:
         return False
@@ -31,7 +31,7 @@ def main():
             if _should_send_daily(last_daily_date):
                 summary = build_daily_summary()
                 asyncio.run(send_daily_report(summary))
-                last_daily_date = datetime.now().strftime("%Y-%m-%d")
+                last_daily_date = now_local().strftime("%Y-%m-%d")
                 print("daily report sent", flush=True)
         except Exception as e:
             print(f"worker error: {e}", flush=True)
