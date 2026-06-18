@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <h2>🔎 {{ domain.domain }}</h2>
+  <p>分组：{{ domain.group_name }} | 标签：{{ domain.tags or '-' }} | 端口：{{ domain.protocol }}:{{ domain.port }} | 启用：{{ domain.enabled }}</p>
+  <p>检测路径：<code>{{ domain.url_paths or '/' }}</code></p>
+  <p>期望状态码：{{ domain.expected_statuses }} | 关键字：{{ domain.keyword or '-' }}</p>
+  <a class="btn" href="/domains/{{ domain.id }}/edit">编辑域名</a> <a class="btn secondary" href="/">返回首页</a>
+</div>
+<div class="panel">
+  <h3>最近检测记录</h3>
+  <table>
+    <thead><tr><th>时间</th><th>类型</th><th>URL</th><th>状态</th><th>HTTP</th><th>响应</th><th>SSL</th><th>Whois</th><th>Ping</th><th>错误</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+    <tr>
+      <td>{{ r.checked_at }}</td>
+      <td>{{ '汇总' if r.is_summary else 'URL' }}</td>
+      <td>{{ r.url or r.url_path or '-' }}</td>
+      <td><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.http_code or '-' }}</td>
+      <td>{{ r.response_time_ms or '-' }} ms</td>
+      <td>{{ r.ssl_days_left if r.ssl_days_left is not none else '-' }} 天</td>
+      <td>{{ r.whois_days_left if r.whois_days_left is not none else '-' }} 天</td>
+      <td>{{ r.ping_ok }}</td>
+      <td>{{ r.error or '-' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

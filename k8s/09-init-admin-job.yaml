@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: domain-monitor-init-admin
+  namespace: monitor
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init-admin
+          image: your-registry/domain-monitor:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "init_admin.py"]
+          envFrom:
+            - configMapRef:
+                name: domain-monitor-config
+            - secretRef:
+                name: domain-monitor-secret

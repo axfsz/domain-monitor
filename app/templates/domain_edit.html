@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+  <h2>编辑域名</h2>
+  <form method="post" action="/domains/{{ domain.id }}/edit" class="edit-form">
+    <label>域名
+      <input name="domain" value="{{ domain.domain }}" required>
+    </label>
+    <label>协议
+      <select name="protocol">
+        <option value="https" {% if domain.protocol == 'https' %}selected{% endif %}>https</option>
+        <option value="http" {% if domain.protocol == 'http' %}selected{% endif %}>http</option>
+      </select>
+    </label>
+    <label>端口
+      <input name="port" type="number" value="{{ domain.port or 443 }}">
+    </label>
+    <label>分组
+      <select name="group_id">
+        {% for g in groups %}<option value="{{ g.id }}" {% if domain.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>标签，逗号分隔
+      <input name="tags" value="{{ domain.tags or '' }}" placeholder="prod,api,cdn">
+    </label>
+    <label>备注
+      <input name="remark" value="{{ domain.remark or '' }}">
+    </label>
+    <label>期望 HTTP 状态码
+      <input name="expected_statuses" value="{{ domain.expected_statuses or default_expected }}" placeholder="200,301,302">
+    </label>
+    <label>关键字匹配，可为空
+      <input name="keyword" value="{{ domain.keyword or '' }}">
+    </label>
+    <label>URL 路径，每行一个
+      <textarea name="url_paths" rows="6">{{ domain.url_paths or '/' }}</textarea>
+    </label>
+    <label>启用状态
+      <select name="enabled">
+        <option value="1" {% if domain.enabled %}selected{% endif %}>启用</option>
+        <option value="0" {% if not domain.enabled %}selected{% endif %}>禁用</option>
+      </select>
+    </label>
+    <div class="form-actions">
+      <button type="submit">保存修改</button>
+      <a class="btn secondary" href="/domains/{{ domain.id }}">返回详情</a>
+      <a class="btn secondary" href="/">返回首页</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

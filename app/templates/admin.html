@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+<h2>管理</h2>
+<h3>新增用户</h3>
+<form method="post" action="/admin/users/add" class="toolbar">
+  <input name="username" placeholder="用户名" required>
+  <input name="password" type="password" placeholder="密码" required>
+  <select name="role"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select>
+  <button>添加用户</button>
+</form>
+<table><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>启用</th><th>创建时间</th></tr></thead><tbody>
+{% for u in users %}<tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.role }}</td><td>{{ u.enabled }}</td><td>{{ u.created_at }}</td></tr>{% endfor %}
+</tbody></table>
+</div>
+<div class="panel">
+<h3>分组</h3>
+<form method="post" action="/admin/groups/add" class="toolbar">
+  <input name="name" placeholder="分组名" required>
+  <input name="description" placeholder="描述">
+  <button>添加分组</button>
+</form>
+<table><thead><tr><th>ID</th><th>名称</th><th>描述</th></tr></thead><tbody>
+{% for g in groups %}<tr><td>{{ g.id }}</td><td>{{ g.name }}</td><td>{{ g.description }}</td></tr>{% endfor %}
+</tbody></table>
+</div>
+<div class="panel">
+<h3>告警策略</h3>
+<form method="post" action="/admin/policies/add" class="toolbar">
+  <input name="name" placeholder="策略名" required>
+  <select name="group_id">{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
+  <input name="fail_threshold" type="number" value="3" title="失败几次告警">
+  <input name="recover_threshold" type="number" value="2" title="恢复几次通知">
+  <input name="silence_start" placeholder="静默开始 22:00">
+  <input name="silence_end" placeholder="静默结束 08:00">
+  <input name="escalation_minutes" type="number" value="15" title="升级分钟数">
+  <button>添加策略</button>
+</form>
+<table><thead><tr><th>名称</th><th>分组</th><th>失败阈值</th><th>恢复阈值</th><th>静默</th><th>升级分钟</th></tr></thead><tbody>
+{% for p in policies %}<tr><td>{{ p.name }}</td><td>{{ p.group_name }}</td><td>{{ p.fail_threshold }}</td><td>{{ p.recover_threshold }}</td><td>{{ p.silence_start }} - {{ p.silence_end }}</td><td>{{ p.escalation_minutes }}</td></tr>{% endfor %}
+</tbody></table>
+</div>
+<div class="panel">
+<h3>最近操作审计</h3>
+<table><thead><tr><th>时间</th><th>用户</th><th>动作</th><th>详情</th></tr></thead><tbody>
+{% for a in audits %}<tr><td>{{ a.created_at }}</td><td>{{ a.username }}</td><td>{{ a.action }}</td><td>{{ a.detail }}</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% endblock %}

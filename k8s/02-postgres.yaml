@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-monitor-postgres
+  namespace: monitor
+  labels:
+    app: domain-monitor-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: domain-monitor-postgres
+  template:
+    metadata:
+      labels:
+        app: domain-monitor-postgres
+    spec:
+      nodeSelector:
+        domain-monitor-postgres: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: middleware
+          effect: NoSchedule
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: domain_monitor
+            - name: POSTGRES_USER
+              value: domain_monitor
+            - name: POSTGRES_PASSWORD
+              value: domain_monitor_password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+      volumes:
+        - name: data
+          hostPath:
+            path: /data/pgsql
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: domain-monitor-postgres
+  namespace: monitor
+  labels:
+    app: domain-monitor-postgres
+spec:
+  selector:
+    app: domain-monitor-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  type: ClusterIP

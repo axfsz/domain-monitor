@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-monitor-redis
+  namespace: monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: domain-monitor-redis
+  template:
+    metadata:
+      labels:
+        app: domain-monitor-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: redis
+              containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: domain-monitor-redis
+  namespace: monitor
+spec:
+  selector:
+    app: domain-monitor-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

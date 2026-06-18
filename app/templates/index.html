@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="cards">
+  <div class="card total">总数<strong>{{ total }}</strong></div>
+  <div class="card ok">正常<strong>{{ ok }}</strong></div>
+  <div class="card warning">警告<strong>{{ warning }}</strong></div>
+  <div class="card error">异常<strong>{{ error }}</strong></div>
+</div>
+{% if bulk_msg %}<div class="notice">{{ bulk_msg }}</div>{% endif %}
+
+<div class="panel">
+  <h3>筛选</h3>
+  <form method="get" action="/" class="toolbar">
+    <input name="q" value="{{ q }}" placeholder="搜索域名">
+    <select name="group_id">
+      <option value="">全部分组</option>
+      {% for g in groups %}<option value="{{ g.id }}" {% if group_id|string == g.id|string %}selected{% endif %}>{{ g.name }}</option>{% endfor %}
+    </select>
+    <input name="tag" value="{{ tag }}" placeholder="标签">
+    <button>筛选</button>
+    <a class="btn" href="/">重置</a>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>添加域名</h3>
+  <form method="post" action="/domains/add" class="grid-form">
+    <input name="domain" placeholder="example.com" required>
+    <select name="protocol"><option value="https">https</option><option value="http">http</option></select>
+    <input name="port" type="number" value="443">
+    <select name="group_id">{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
+    <input name="tags" placeholder="标签，逗号分隔，如 prod,api">
+    <input name="expected_statuses" value="{{ default_expected }}" placeholder="期望状态码">
+    <input name="keyword" placeholder="可选关键字匹配">
+    <input name="remark" placeholder="备注">
+    <textarea name="url_paths" placeholder="检测 URL 路径，每行一个，默认 /">/</textarea>
+    <button type="submit">添加域名</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>批量添加域名</h3>
+  <form method="post" action="/domains/bulk-add" class="bulk-add-form">
+    <textarea name="domains_text" rows="8" placeholder="example.com\nhttps://api.example.com/health\nadmin.example.com,https,443,/login\n# 注释行会忽略"></textarea>
+    <div class="toolbar">
+      <select name="protocol"><option value="https">https</option><option value="http">http</option></select>
+      <input name="port" type="number" value="443">
+      <select name="group_id">{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
+      <input name="tags" placeholder="统一标签">
+      <input name="expected_statuses" value="{{ default_expected }}" placeholder="期望状态码">
+      <input name="keyword" placeholder="统一关键字">
+      <input name="remark" placeholder="统一备注">
+      <input name="url_paths" value="/" placeholder="默认路径，如 /,/health">
+      <button type="submit">批量添加</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>批量操作</h3>
+  <p class="help">修改已添加域名的分组、标签、端口、路径等，请先勾选域名，再把动作切换为 <b>批量编辑分组/标签/配置</b>。只想改标签也可以选择 <b>覆盖标签</b> 或 <b>追加标签</b>。</p>
+  <form id="bulkForm" method="post" action="/domains/bulk-action">
+    <div class="toolbar bulk-toolbar">
+      <select name="action">
+        <option value="check">批量检测</option>
+        <option value="edit">批量编辑分组/标签/配置</option>
+        <option value="set_tags">覆盖标签</option>
+        <option value="append_tags">追加标签</option>
+        <option value="enable">批量启用</option>
+        <option value="disable">批量禁用</option>
+        <option value="delete">批量删除</option>
+      </select>
+      <select name="group_id"><option value="">不改分组</option>{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
+      <input name="tags" placeholder="标签">
+      <input name="remark" placeholder="备注">
+      <select name="protocol"><option value="">不改协议</option><option value="https">https</option><option value="http">http</option></select>
+      <input name="port" type="number" placeholder="端口">
+      <input name="expected_statuses" placeholder="期望状态码">
+      <input name="keyword" placeholder="关键字，留空不改">
+      <input name="url_paths" placeholder="URL路径，例：/ /health">
+      <button type="submit" onclick="return confirmBulkAction()">执行</button>
+      <button formaction="/domains/check-all" formmethod="post" onclick="return confirm('确认全量检测所有启用域名？')">全量检测</button>
+      <button formaction="/reports/daily/send" formmethod="post">发送每日巡检报告</button>
+    </div>
+
+    <table>
+      <thead>
+      <tr>
+        <th><input type="checkbox" onclick="toggleAll(this)"></th>
+        <th>域名</th><th>分组</th><th>标签</th><th>状态</th><th>HTTP</th><th>响应</th><th>SSL</th><th>Whois</th><th>Ping</th><th>路径</th><th>解析 IP</th><th>最后检测</th><th>操作</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for d in domains %}
+      <tr>
+        <td><input type="checkbox" name="domain_ids" value="{{ d.id }}"></td>
+        <td><a href="/domains/{{ d.id }}">{{ d.domain }}</a><small>{{ d.remark }}</small></td>
+        <td>{{ d.group_name }}</td>
+        <td>{{ d.tags or '-' }}</td>
+        <td><span class="badge {{ d.status or 'unknown' }}">{{ d.status or '未检测' }}</span>{% if not d.enabled %}<span class="badge disabled">禁用</span>{% endif %}</td>
+        <td>{{ d.http_code or '-' }}</td>
+        <td>{{ d.response_time_ms or '-' }} ms</td>
+        <td>{{ d.ssl_days_left if d.ssl_days_left is not none else '-' }} 天</td>
+        <td>{{ d.whois_days_left if d.whois_days_left is not none else '-' }} 天</td>
+        <td>{{ d.ping_ok }}</td>
+        <td><code>{{ d.url_paths or '/' }}</code></td>
+        <td>{{ d.resolved_ips or '-' }}</td>
+        <td>{{ d.checked_at or '-' }}</td>
+        <td class="actions">
+          <a class="btn mini secondary" href="/domains/{{ d.id }}/edit">编辑</a>
+          <form method="post" action="/domains/check/{{ d.id }}" class="inline"><button>检测</button></form>
+          <form method="post" action="/domains/toggle/{{ d.id }}" class="inline"><button>{{ '禁用' if d.enabled else '启用' }}</button></form>
+          <form method="post" action="/domains/delete/{{ d.id }}" class="inline" onsubmit="return confirm('确认删除？')"><button class="danger">删除</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </form>
+</div>
+<script>
+function toggleAll(source) { document.querySelectorAll('input[name="domain_ids"]').forEach(cb => cb.checked = source.checked); }
+function confirmBulkAction() {
+  const action = document.querySelector('select[name="action"]').value;
+  const count = document.querySelectorAll('input[name="domain_ids"]:checked').length;
+  if (!count) { alert('请先选择域名'); return false; }
+  if (action === 'delete') return confirm('确认批量删除 ' + count + ' 个域名？该操作不可恢复。');
+  return true;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,14 @@
+{
+  "title": "Domain Monitor",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {"type":"stat","title":"异常域名数量","gridPos":{"x":0,"y":0,"w":6,"h":4},"targets":[{"expr":"count(domain_monitor_up == 0)","refId":"A"}]},
+    {"type":"stat","title":"SSL 15天内过期","gridPos":{"x":6,"y":0,"w":6,"h":4},"targets":[{"expr":"count(domain_monitor_ssl_days_left <= 15)","refId":"A"}]},
+    {"type":"stat","title":"Whois 30天内过期","gridPos":{"x":12,"y":0,"w":6,"h":4},"targets":[{"expr":"count(domain_monitor_whois_days_left <= 30)","refId":"A"}]},
+    {"type":"timeseries","title":"响应时间","gridPos":{"x":0,"y":4,"w":12,"h":8},"targets":[{"expr":"domain_monitor_response_time_ms","legendFormat":"{{domain}}/{{agent}}","refId":"A"}]},
+    {"type":"table","title":"当前异常域名","gridPos":{"x":12,"y":4,"w":12,"h":8},"targets":[{"expr":"domain_monitor_up == 0","format":"table","instant":true,"refId":"A"}]}
+  ]
+}

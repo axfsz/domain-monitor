@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-monitor-web
+  namespace: monitor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: domain-monitor-web
+  template:
+    metadata:
+      labels:
+        app: domain-monitor-web
+    spec:
+      containers:
+        - name: web
+          image: your-registry/domain-monitor:latest
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+          envFrom:
+            - configMapRef:
+                name: domain-monitor-config
+            - secretRef:
+                name: domain-monitor-secret
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-monitor-worker
+  namespace: monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: domain-monitor-worker
+  template:
+    metadata:
+      labels:
+        app: domain-monitor-worker
+    spec:
+      containers:
+        - name: worker
+          image: your-registry/domain-monitor:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "worker.py"]
+          envFrom:
+            - configMapRef:
+                name: domain-monitor-config
+            - secretRef:
+                name: domain-monitor-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: domain-monitor-agent
+  namespace: monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: domain-monitor-agent
+  template:
+    metadata:
+      labels:
+        app: domain-monitor-agent
+    spec:
+      containers:
+        - name: agent
+          image: your-registry/domain-monitor:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "agent.py"]
+          envFrom:
+            - configMapRef:
+                name: domain-monitor-config
+            - secretRef:
+                name: domain-monitor-secret
+          securityContext:
+            capabilities:
+              add:
+                - NET_RAW

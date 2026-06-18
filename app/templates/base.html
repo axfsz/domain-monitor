@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Domain Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="brand">🌐 Domain Monitor</div>
+    <div>
+      <a href="/">首页</a>
+      <a href="/admin">管理</a>
+      <a href="/metrics">Metrics</a>
+      <a href="/logout">退出</a>
+    </div>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

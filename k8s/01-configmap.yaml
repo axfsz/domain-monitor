@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: domain-monitor-config
+  namespace: monitor
+data:
+  APP_NAME: "Domain Monitor"
+  CHECK_INTERVAL_SECONDS: "60"
+  HTTP_TIMEOUT: "10"
+  SSL_EXPIRE_WARN_DAYS: "15"
+  WHOIS_EXPIRE_WARN_DAYS: "30"
+  NOTIFY_CHANNEL: "telegram"
+  DAILY_REPORT_ENABLED: "true"
+  DAILY_REPORT_TIME: "09:00"
+  DAILY_REPORT_CHANNEL: "telegram"
+  DEFAULT_EXPECTED_STATUS: "200,301,302"
+  AGENT_NAME: "k8s-local"
+  AGENT_REGION: "prod-k8s"
+  PING_ENABLED: "true"
+  TZ: "Asia/Shanghai"
