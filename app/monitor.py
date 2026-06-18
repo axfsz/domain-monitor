@@ -205,9 +205,13 @@ async def check_one_domain(row):
                     else:
                         item["status"] = "ok"
                 except Exception as exc:
-                    http_5xx_streak = 0
-                    item["status"] = "error"
-                    item["error"] = f"URL {path} 检测失败：{exc}"
+                    http_5xx_streak += 1
+                    if http_5xx_streak >= HTTP_5XX_ERROR_THRESHOLD:
+                        item["status"] = "error"
+                        item["error"] = f"URL {path} 检测失败：{exc}；已连续 {http_5xx_streak} 次服务失败，状态升级为 error"
+                    else:
+                        item["status"] = "warning"
+                        item["error"] = f"URL {path} 检测失败：{exc}；已连续 {http_5xx_streak} 次服务失败，未达 {HTTP_5XX_ERROR_THRESHOLD} 次前页面显示为 warning"
                 if item["status"] != "ok":
                     errors.append(item["error"])
                     if item["status"] == "error":
