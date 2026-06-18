@@ -181,6 +181,7 @@ async def check_one_domain(row):
             paths = parse_url_paths(row.get("url_paths") or "/")
             response_times = []
             first_code = None
+            http_5xx_streak = previous_5xx_streak
             for path in paths:
                 url = f"{protocol}://{domain}{path}" if port in (80, 443) else f"{protocol}://{domain}:{port}{path}"
                 item = _base_result(row)
@@ -192,15 +193,19 @@ async def check_one_domain(row):
                     response_times.append(rt)
                     if first_code is None:
                         first_code = code
+                    if 500 <= code < 600:
+                        http_5xx_streak += 1
+                    else:
+                        http_5xx_streak = 0
                     if code not in expected:
-                        current_5xx_streak = previous_5xx_streak + 1 if 500 <= code < 600 else 0
-                        item["status"], item["error"] = classify_http_issue(code, expected, current_5xx_streak)
+                        item["status"], item["error"] = classify_http_issue(code, expected, http_5xx_streak)
                     elif keyword and not keyword_ok:
                         item["status"] = "warning"
                         item["error"] = f"URL {path} 未匹配关键字：{keyword}"
                     else:
                         item["status"] = "ok"
                 except Exception as exc:
+                    http_5xx_streak = 0
                     item["status"] = "error"
                     item["error"] = f"URL {path} 检测失败：{exc}"
                 if item["status"] != "ok":
