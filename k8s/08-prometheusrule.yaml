@@ -10,15 +10,15 @@ spec:
     - name: domain-monitor.rules
       rules:
         - alert: DomainDown
-          expr: domain_monitor_up == 0
+          expr: max by (domain, group) (domain_monitor_up) == 0
           for: 3m
           labels:
             severity: critical
           annotations:
             summary: "域名不可用: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 在探测节点 {{ $labels.agent }} 检测失败超过 3 分钟。"
+            description: "域名 {{ $labels.domain }} 在分组 {{ $labels.group }} 持续检测失败超过 3 分钟。"
         - alert: DomainSSLCertExpiringSoon
-          expr: domain_monitor_ssl_days_left <= 15
+          expr: min by (domain, group) (domain_monitor_ssl_days_left) <= 15
           for: 10m
           labels:
             severity: warning
@@ -26,7 +26,7 @@ spec:
             summary: "SSL 证书即将过期: {{ $labels.domain }}"
             description: "域名 {{ $labels.domain }} SSL 证书剩余 {{ $value }} 天。"
         - alert: DomainWhoisExpiringSoon
-          expr: domain_monitor_whois_days_left <= 30
+          expr: min by (domain, group) (domain_monitor_whois_days_left) <= 30
           for: 10m
           labels:
             severity: warning
@@ -36,15 +36,25 @@ spec:
         - alert: DomainHighLatency
           expr: |
             (
-              avg_over_time(domain_monitor_response_time_ms[10m]) > 5000
+              max by (domain, group) (
+                avg_over_time(domain_monitor_response_time_ms[15m])
+              ) > 8000
             )
-            and on(domain, group, agent, region)
+            and on(domain, group)
             (
-              max_over_time(domain_monitor_status_level[10m]) == 0
+              min by (domain, group) (
+                min_over_time(domain_monitor_response_time_ms[15m])
+              ) > 3000
             )
-          for: 10m
+            and on(domain, group)
+            (
+              max by (domain, group) (
+                max_over_time(domain_monitor_status_level[15m])
+              ) == 0
+            )
+          for: 15m
           labels:
             severity: warning
           annotations:
             summary: "域名响应慢: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 在探测节点 {{ $labels.agent }} 近 10 分钟平均响应时间超过 5000ms，且未处于其他异常状态。"
+            description: "域名 {{ $labels.domain }} 连续 15 分钟响应偏慢，期间响应时间始终高于 3000ms，且近 15 分钟平均响应时间超过 8000ms，并未处于其他异常状态。"

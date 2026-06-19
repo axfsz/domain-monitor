@@ -28,7 +28,7 @@ def update_domain_metrics(result: dict):
     agent = result.get("agent_name", "local")
     region = result.get("agent_region", "-")
     status = result.get("status", "error")
-    domain_up.labels(domain, group, agent, region).set(1 if status == "ok" else 0)
+    domain_up.labels(domain, group, agent, region).set(0 if status == "error" else 1)
     domain_status_level.labels(domain, group, agent, region).set(0 if status == "ok" else (1 if status == "warning" else 2))
     if result.get("http_code") is not None:
         domain_http_code.labels(domain, group, agent, region).set(result["http_code"])
@@ -93,7 +93,7 @@ def sync_metrics_from_db():
         labels2 = (domain, group)
 
         current_up.add(labels4)
-        domain_up.labels(*labels4).set(1 if row["status"] == "ok" else 0)
+        domain_up.labels(*labels4).set(0 if row["status"] == "error" else 1)
         current_status_level.add(labels4)
         domain_status_level.labels(*labels4).set(0 if row["status"] == "ok" else (1 if row["status"] == "warning" else 2))
 

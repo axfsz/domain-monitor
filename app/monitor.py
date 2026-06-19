@@ -10,6 +10,27 @@ from time_utils import now_local, now_local_naive
 
 HTTP_5XX_ERROR_THRESHOLD = 5
 
+def describe_http_4xx(code: int) -> str:
+    if code == 400:
+        return "请求格式错误"
+    if code == 401:
+        return "未认证或需要登录"
+    if code == 403:
+        return "已认证但无访问权限"
+    if code == 404:
+        return "资源不存在"
+    if code == 405:
+        return "请求方法不被允许"
+    if code == 408:
+        return "请求超时"
+    if code == 409:
+        return "请求冲突"
+    if code == 410:
+        return "资源已删除"
+    if code == 429:
+        return "请求过于频繁，被限流"
+    return "客户端错误"
+
 def in_silence_window(policy: dict) -> bool:
     start = policy.get("silence_start")
     end = policy.get("silence_end")
@@ -63,7 +84,7 @@ def classify_http_issue(code: int, expected: set[int], current_5xx_streak: int) 
             return "error", f"HTTP {code} 服务端错误，已连续 {current_5xx_streak} 次 5xx，状态升级为 error，期望 {expected_list}"
         return "warning", f"HTTP {code} 服务端错误，已连续 {current_5xx_streak} 次 5xx，未达 {HTTP_5XX_ERROR_THRESHOLD} 次前页面显示为 warning，期望 {expected_list}"
     if 400 <= code < 500:
-        return "warning", f"HTTP {code} 客户端请求异常，不在期望 {expected_list}"
+        return "ok", f"HTTP {code} {describe_http_4xx(code)}，域名服务可达，期望 {expected_list}"
     if 300 <= code < 400:
         return "warning", f"HTTP {code} 重定向响应，不在期望 {expected_list}"
     if 100 <= code < 200:

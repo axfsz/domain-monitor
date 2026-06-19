@@ -13,7 +13,25 @@ def classify_http_notice(result: dict) -> str:
     if 500 <= code < 600:
         return "服务端异常"
     if 400 <= code < 500:
-        return "请求异常"
+        if code == 400:
+            return "请求格式错误"
+        if code == 401:
+            return "未认证或需要登录"
+        if code == 403:
+            return "已认证但无访问权限"
+        if code == 404:
+            return "资源不存在"
+        if code == 405:
+            return "请求方法不被允许"
+        if code == 408:
+            return "请求超时"
+        if code == 409:
+            return "请求冲突"
+        if code == 410:
+            return "资源已删除"
+        if code == 429:
+            return "请求过于频繁"
+        return "客户端错误"
     if 300 <= code < 400:
         return "重定向异常"
     if 100 <= code < 200:
