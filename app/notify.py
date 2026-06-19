@@ -2,6 +2,24 @@ import httpx
 from config import WECHAT_WEBHOOK_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTIFY_CHANNEL, DAILY_REPORT_CHANNEL
 from time_utils import format_local_with_label
 
+TELEGRAM_TEXT_LIMIT = 3500
+
+def _display_source(result: dict) -> str:
+    source = (result.get("trigger_source") or "worker").strip().lower()
+    if source == "manual":
+        return "后台手动检测"
+    if source == "worker":
+        return "定时巡检"
+    if source == "daily_report":
+        return "每日报告"
+    return source or "unknown"
+
+def _truncate_telegram_text(text: str) -> str:
+    if len(text) <= TELEGRAM_TEXT_LIMIT:
+        return text
+    suffix = "\n\n[消息过长，已自动截断]"
+    return text[: TELEGRAM_TEXT_LIMIT - len(suffix)] + suffix
+
 def classify_http_notice(result: dict) -> str:
     code = result.get("http_code")
     if code is None:
@@ -58,6 +76,7 @@ def build_wechat_markdown(result: dict, recovered: bool = False) -> str:
 > 告警类型：{notice_type}
 > 当前状态：<font color=\"{color}\">{result.get('status','-')}</font>
 > 探测节点：{result.get('agent_name','local')} / {result.get('agent_region','-')}
+> 触发来源：{_display_source(result)}
 
 **HTTP 检测**
 > 状态码：{result.get('http_code','-')}
@@ -95,6 +114,7 @@ def build_plain_text(result: dict, recovered: bool = False) -> str:
 🧭 类型: {notice_type}
 📌 状态: {result.get('status','-')}
 🛰 节点: {result.get('agent_name','local')} / {result.get('agent_region','-')}
+🧪 来源: {_display_source(result)}
 
 HTTP: {result.get('http_code','-')}
 响应: {result.get('response_time_ms','-')} ms
@@ -144,7 +164,7 @@ async def _send_telegram_text(text: str):
         print("telegram skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is empty", flush=True)
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True}
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": _truncate_telegram_text(text), "disable_web_page_preview": True}
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(url, json=payload)
         if resp.status_code >= 300:

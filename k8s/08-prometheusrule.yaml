@@ -38,13 +38,13 @@ spec:
             (
               max by (domain, group) (
                 avg_over_time(domain_monitor_response_time_ms[15m])
-              ) > 10000
+              ) > 65000
             )
             and on(domain, group)
             (
               min by (domain, group) (
                 min_over_time(domain_monitor_response_time_ms[15m])
-              ) > 5000
+              ) > 60000
             )
             and on(domain, group)
             (
@@ -52,9 +52,9 @@ spec:
                 max_over_time(domain_monitor_status_level[15m])
               ) == 0
             )
-          for: 15m
+          for: 30m
           labels:
             severity: warning
           annotations:
             summary: "域名持续高延迟: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 连续 15 分钟保持高延迟，近 15 分钟平均响应时间超过 10000ms，且期间最低响应时间也高于 5000ms，并未处于其他异常状态。"
+            description: "域名 {{ $labels.domain }} 持续 30 分钟满足高延迟条件，近 15 分钟平均响应时间超过 65000ms，且期间最低响应时间也高于 60000ms，并未处于其他异常状态。"

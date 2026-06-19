@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION
+from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES
 from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
@@ -42,6 +42,24 @@ def in_silence_window(policy: dict) -> bool:
     if st < et:
         return st <= now <= et
     return now >= st or now <= et
+
+def is_duplicate_notification(state, status: str, current_error: str, recovered: bool) -> bool:
+    if not state or recovered:
+        return False
+    last_alert_at = state["last_alert_at"]
+    if not last_alert_at:
+        return False
+    if isinstance(last_alert_at, str):
+        last_alert_at = datetime.fromisoformat(last_alert_at)
+    if now_local_naive() - last_alert_at > timedelta(minutes=NOTIFY_DEDUP_MINUTES):
+        return False
+    last_status = state["last_alert_status"] or ""
+    last_error = state["last_error"] or ""
+    if status == "error" and last_status in ("error", "critical") and last_error == current_error:
+        return True
+    if status == "warning" and last_status == "warning" and last_error == current_error:
+        return True
+    return False
 
 def save_result(result: dict):
     with get_db() as db:
@@ -91,7 +109,7 @@ def classify_http_issue(code: int, expected: set[int], current_5xx_streak: int) 
         return "warning", f"HTTP {code} 信息响应，不在期望 {expected_list}"
     return "warning", f"HTTP {code} 状态异常，不在期望 {expected_list}"
 
-async def process_alert(result: dict, policy: dict):
+async def process_alert(result: dict, policy: dict, notify: bool = True):
     domain_id = result["domain_id"]
     status = result["status"]
     current_error = result.get("error") or ""
@@ -114,7 +132,7 @@ async def process_alert(result: dict, policy: dict):
             first_failed_at = old_first_failed_at or now_local_naive()
             if fail_count >= fail_threshold and last_alert_status != status:
                 should_alert = True
-            if last_alert_status in ("error", "warning") and not old_escalated and first_failed_at:
+            if status == "error" and last_alert_status in ("error", "critical") and not old_escalated and first_failed_at:
                 if isinstance(first_failed_at, str):
                     first_failed_at = datetime.fromisoformat(first_failed_at)
                 if now_local_naive() - first_failed_at >= timedelta(minutes=escalation_minutes):
@@ -128,6 +146,8 @@ async def process_alert(result: dict, policy: dict):
                 should_alert = True
                 recovered = True
         if should_alert and not recovered and status == "warning" and in_silence_window(policy):
+            should_alert = False
+        if should_alert and notify and is_duplicate_notification(state, status, current_error, recovered):
             should_alert = False
         new_last_alert_status = last_alert_status
         if should_alert:
@@ -160,7 +180,7 @@ async def process_alert(result: dict, policy: dict):
         })
         result["fail_count"] = fail_count
     update_domain_metrics(result)
-    if should_alert:
+    if should_alert and notify:
         if should_escalate:
             result["alert_level"] = "critical"
             result["error"] = f"[升级告警] {result.get('error') or ''}"
@@ -172,6 +192,7 @@ def _base_result(row, status="ok"):
         "domain_id": row["id"], "domain": row["domain"], "group_name": row.get("group_name") or "default",
         "tags": row.get("tags") or "",
         "agent_name": AGENT_NAME, "agent_region": AGENT_REGION,
+        "trigger_source": row.get("trigger_source") or "worker",
         "url": "", "url_path": "/", "is_summary": True,
         "status": status, "http_code": None, "response_time_ms": None,
         "resolved_ips": "", "ssl_expire_at": None, "ssl_days_left": None,
@@ -180,8 +201,9 @@ def _base_result(row, status="ok"):
         "urls_checked": 0,
     }
 
-async def check_one_domain(row):
+async def check_one_domain(row, notify: bool = True):
     row = dict(row)
+    row.setdefault("trigger_source", "worker")
     domain = row["domain"]
     protocol = row.get("protocol") or "https"
     port = int(row.get("port") or (443 if protocol == "https" else 80))
@@ -266,10 +288,10 @@ async def check_one_domain(row):
         result["status"] = "error"
         result["error"] = str(e)
     save_result(result)
-    await process_alert(result, get_policy(row.get("group_id")))
+    await process_alert(result, get_policy(row.get("group_id")), notify=notify)
     return result
 
-async def check_all_domains():
+async def check_all_domains(notify: bool = True):
     with get_db() as db:
         rows = db.execute(text("""
         SELECT d.*, g.name AS group_name FROM domains d
@@ -279,7 +301,7 @@ async def check_all_domains():
         """)).mappings().fetchall()
     if not rows:
         return []
-    return await asyncio.gather(*(check_one_domain(dict(r)) for r in rows))
+    return await asyncio.gather(*(check_one_domain(dict(r), notify=notify) for r in rows))
 
 def latest_summary_rows():
     with get_db() as db:

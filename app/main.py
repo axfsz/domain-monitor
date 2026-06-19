@@ -216,9 +216,12 @@ async def bulk_action(domain_ids: list[int] = Form(default=[]), action: str = Fo
             rows = []
             for did in domain_ids:
                 r = db.execute(text("SELECT d.*, g.name AS group_name FROM domains d LEFT JOIN domain_groups g ON d.group_id=g.id WHERE d.id=:id"), {"id": did}).mappings().fetchone()
-                if r: rows.append(dict(r))
+                if r:
+                    item = dict(r)
+                    item["trigger_source"] = "manual"
+                    rows.append(item)
         for r in rows:
-            await check_one_domain(r)
+            await check_one_domain(r, notify=False)
             checked += 1
     msg = f"批量操作完成：动作 {action}，数量 {len(domain_ids)}" + (f"，已检测 {checked}" if checked else "")
     audit(user["username"], "bulk_action", msg)
@@ -244,12 +247,14 @@ async def manual_check(domain_id: int, user=Depends(get_current_user)):
     with get_db() as db:
         row = db.execute(text("SELECT d.*, g.name AS group_name FROM domains d LEFT JOIN domain_groups g ON d.group_id=g.id WHERE d.id=:id"), {"id": domain_id}).mappings().fetchone()
     if row:
-        await check_one_domain(dict(row))
+        item = dict(row)
+        item["trigger_source"] = "manual"
+        await check_one_domain(item, notify=False)
     return RedirectResponse("/", status_code=302)
 
 @app.post("/domains/check-all")
 async def manual_check_all(user=Depends(get_current_user)):
-    results = await check_all_domains()
+    results = await check_all_domains(notify=False)
     msg = f"全量检测完成：{len(results)} 个域名"
     return RedirectResponse(f"/?bulk_msg={quote(msg)}", status_code=302)
 
