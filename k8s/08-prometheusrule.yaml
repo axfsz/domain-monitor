@@ -34,10 +34,17 @@ spec:
             summary: "域名注册即将过期: {{ $labels.domain }}"
             description: "域名 {{ $labels.domain }} 注册有效期剩余 {{ $value }} 天。"
         - alert: DomainHighLatency
-          expr: domain_monitor_response_time_ms > 3000
-          for: 5m
+          expr: |
+            (
+              avg_over_time(domain_monitor_response_time_ms[10m]) > 5000
+            )
+            and on(domain, group, agent, region)
+            (
+              max_over_time(domain_monitor_status_level[10m]) == 0
+            )
+          for: 10m
           labels:
             severity: warning
           annotations:
             summary: "域名响应慢: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 响应时间超过 3000ms。"
+            description: "域名 {{ $labels.domain }} 在探测节点 {{ $labels.agent }} 近 10 分钟平均响应时间超过 5000ms，且未处于其他异常状态。"
