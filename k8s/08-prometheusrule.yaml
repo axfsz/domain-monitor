@@ -38,13 +38,13 @@ spec:
             (
               max by (domain, group) (
                 avg_over_time(domain_monitor_response_time_ms[15m])
-              ) > 8000
+              ) > 10000
             )
             and on(domain, group)
             (
               min by (domain, group) (
                 min_over_time(domain_monitor_response_time_ms[15m])
-              ) > 3000
+              ) > 5000
             )
             and on(domain, group)
             (
@@ -56,5 +56,5 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "域名响应慢: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 连续 15 分钟响应偏慢，期间响应时间始终高于 3000ms，且近 15 分钟平均响应时间超过 8000ms，并未处于其他异常状态。"
+            summary: "域名持续高延迟: {{ $labels.domain }}"
+            description: "域名 {{ $labels.domain }} 连续 15 分钟保持高延迟，近 15 分钟平均响应时间超过 10000ms，且期间最低响应时间也高于 5000ms，并未处于其他异常状态。"
