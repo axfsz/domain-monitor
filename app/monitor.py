@@ -7,6 +7,7 @@ from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
 from metrics import update_domain_metrics, domain_alert_total
+from status_utils import effective_status
 from time_utils import now_local, now_local_naive
 
 HTTP_5XX_ERROR_THRESHOLD = 5
@@ -365,15 +366,24 @@ def latest_summary_rows():
     with get_db() as db:
         rows = db.execute(text("""
         SELECT d.*, g.name AS group_name, r.status, r.http_code, r.response_time_ms, r.resolved_ips,
-               r.ssl_expire_at, r.ssl_days_left, r.whois_expire_at, r.whois_days_left, r.ping_ok, r.error, r.checked_at
+               r.ssl_expire_at, r.ssl_days_left, r.whois_expire_at, r.whois_days_left, r.ping_ok, r.error, r.checked_at,
+               COALESCE(a.fail_count, 0) AS fail_count, a.last_alert_status, a.current_status AS alert_current_status
         FROM domains d
         LEFT JOIN domain_groups g ON d.group_id=g.id
         LEFT JOIN check_results r ON r.id = (
             SELECT id FROM check_results WHERE domain_id=d.id AND is_summary=true ORDER BY id DESC LIMIT 1
         )
+        LEFT JOIN alert_state a ON a.domain_id=d.id
         ORDER BY d.id DESC
         """)).mappings().fetchall()
-        return [dict(r) for r in rows]
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["raw_status"] = item.get("status")
+            item["status"] = effective_status(item.get("status"), item.get("fail_count"))
+            item["report_status"] = item["status"]
+            items.append(item)
+        return items
 
 def build_daily_summary():
     rows = latest_summary_rows()

@@ -35,20 +35,21 @@ spec:
             description: "域名 {{ $labels.domain }} 注册有效期剩余 {{ $value }} 天。"
         - alert: DomainHighLatency
           expr: |
-            (
-              max by (domain, group) (
-                domain_monitor_response_time_ms
-              ) >= 300000
-            )
-            and on(domain, group)
-            (
-              max by (domain, group) (
-                domain_monitor_status_level
-              ) == 0
-            )
-          for: 5m
+            sum_over_time((
+              (
+                max by (domain, group) (
+                  domain_monitor_response_time_ms
+                ) >= bool 300000
+              )
+              * on(domain, group)
+              (
+                max by (domain, group) (
+                  domain_monitor_status_level
+                ) == bool 0
+              )
+            )[5m:1m]) >= 5
           labels:
             severity: warning
           annotations:
             summary: "域名持续高延迟: {{ $labels.domain }}"
-            description: "域名 {{ $labels.domain }} 连续约 5 次检测响应时间达到或超过 300000ms，且未处于其他异常状态。"
+            description: "域名 {{ $labels.domain }} 在最近 5 分钟内连续 5 次检测响应时间达到或超过 300000ms，且未处于其他异常状态。"

@@ -3,6 +3,7 @@ from fastapi import Response
 from sqlalchemy import text
 
 from database import get_db
+from status_utils import effective_status
 
 domain_up = Gauge("domain_monitor_up", "Domain availability status, 1 means up, 0 means down", ["domain", "group", "agent", "region"])
 domain_status_level = Gauge("domain_monitor_status_level", "Domain status level, ok=0 warning=1 error=2", ["domain", "group", "agent", "region"])
@@ -27,7 +28,7 @@ def update_domain_metrics(result: dict):
     group = result.get("group_name", "default")
     agent = result.get("agent_name", "local")
     region = result.get("agent_region", "-")
-    status = result.get("status", "error")
+    status = effective_status(result.get("status", "error"), result.get("fail_count"))
     domain_up.labels(domain, group, agent, region).set(0 if status == "error" else 1)
     domain_status_level.labels(domain, group, agent, region).set(0 if status == "ok" else (1 if status == "warning" else 2))
     if result.get("http_code") is not None:
@@ -89,13 +90,14 @@ def sync_metrics_from_db():
         group = row["group_name"] or "default"
         agent = row["agent_name"] or "local"
         region = row["agent_region"] or "-"
+        status = effective_status(row["status"], row["fail_count"])
         labels4 = (domain, group, agent, region)
         labels2 = (domain, group)
 
         current_up.add(labels4)
-        domain_up.labels(*labels4).set(0 if row["status"] == "error" else 1)
+        domain_up.labels(*labels4).set(0 if status == "error" else 1)
         current_status_level.add(labels4)
-        domain_status_level.labels(*labels4).set(0 if row["status"] == "ok" else (1 if row["status"] == "warning" else 2))
+        domain_status_level.labels(*labels4).set(0 if status == "ok" else (1 if status == "warning" else 2))
 
         if row["http_code"] is not None:
             current_http.add(labels4)

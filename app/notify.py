@@ -151,7 +151,7 @@ def build_daily_report_text(summary: dict) -> str:
         for index, item in enumerate(bad[:30], start=1):
             detail = item.get("error") or "-"
             lines.append(
-                f"{index}. {item.get('domain')} [{item.get('group_name')}] {item.get('status')} | HTTP {item.get('http_code') or '-'}"
+                f"{index}. {item.get('domain')} [{item.get('group_name')}] {item.get('report_status') or item.get('status')} | HTTP {item.get('http_code') or '-'}"
             )
             lines.append(f"   原因: {detail}")
         if len(bad) > 30:

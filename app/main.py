@@ -12,6 +12,7 @@ from monitor import check_one_domain, check_all_domains, latest_summary_rows, bu
 from notify import send_daily_report
 from checks import parse_url_paths
 from metrics import metrics_response
+from status_utils import effective_status
 
 app = FastAPI(title=APP_NAME)
 templates = Jinja2Templates(directory="templates")
@@ -120,13 +121,19 @@ def index(request: Request, bulk_msg: str = "", q: str = "", group_id: str = "",
         where_sql = "WHERE " + " AND ".join(where) if where else ""
         domains = db.execute(text(f"""
         SELECT d.*, g.name AS group_name, r.status, r.http_code, r.response_time_ms, r.resolved_ips,
-               r.ssl_expire_at, r.ssl_days_left, r.whois_expire_at, r.whois_days_left, r.ping_ok, r.error, r.checked_at
+               r.ssl_expire_at, r.ssl_days_left, r.whois_expire_at, r.whois_days_left, r.ping_ok, r.error, r.checked_at,
+               COALESCE(a.fail_count, 0) AS fail_count
         FROM domains d
         LEFT JOIN domain_groups g ON d.group_id=g.id
         LEFT JOIN check_results r ON r.id = (SELECT id FROM check_results WHERE domain_id=d.id AND is_summary=true ORDER BY id DESC LIMIT 1)
+        LEFT JOIN alert_state a ON a.domain_id=d.id
         {where_sql}
         ORDER BY d.id DESC
         """), params).mappings().fetchall()
+    domains = [dict(d) for d in domains]
+    for domain in domains:
+        domain["raw_status"] = domain.get("status")
+        domain["status"] = effective_status(domain.get("status"), domain.get("fail_count"))
     total = len(domains)
     ok = len([d for d in domains if d["status"] == "ok"])
     warning = len([d for d in domains if d["status"] == "warning"])
