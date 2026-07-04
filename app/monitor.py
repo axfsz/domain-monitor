@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES
+from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES, WARNING_FAIL_THRESHOLD
 from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
@@ -9,6 +9,15 @@ from metrics import update_domain_metrics, domain_alert_total
 from time_utils import now_local, now_local_naive
 
 HTTP_5XX_ERROR_THRESHOLD = 5
+STATUS_PRIORITY = {"ok": 0, "warning": 1, "error": 2}
+
+def merge_status(current: str, candidate: str) -> str:
+    return candidate if STATUS_PRIORITY.get(candidate, 0) > STATUS_PRIORITY.get(current, 0) else current
+
+def summarize_response_time(response_times: list[int]) -> int | None:
+    if not response_times:
+        return None
+    return round(sum(response_times) / len(response_times))
 
 def describe_http_4xx(code: int) -> str:
     if code == 400:
@@ -116,6 +125,7 @@ async def process_alert(result: dict, policy: dict, notify: bool = True):
     fail_threshold = int(policy.get("fail_threshold") or 3)
     recover_threshold = int(policy.get("recover_threshold") or 2)
     escalation_minutes = int(policy.get("escalation_minutes") or 15)
+    warning_fail_threshold = max(fail_threshold, WARNING_FAIL_THRESHOLD)
     should_alert = False
     recovered = False
     should_escalate = False
@@ -127,10 +137,11 @@ async def process_alert(result: dict, policy: dict, notify: bool = True):
         old_first_failed_at = state["first_failed_at"] if state else None
         old_escalated = bool(state["escalated"]) if state else False
         if status in ("error", "warning"):
+            current_fail_threshold = warning_fail_threshold if status == "warning" else fail_threshold
             fail_count = old_fail_count + 1
             success_count = 0
             first_failed_at = old_first_failed_at or now_local_naive()
-            if fail_count >= fail_threshold and last_alert_status != status:
+            if fail_count >= current_fail_threshold and last_alert_status != status:
                 should_alert = True
             if status == "error" and last_alert_status in ("error", "critical") and not old_escalated and first_failed_at:
                 if isinstance(first_failed_at, str):
@@ -201,6 +212,16 @@ def _base_result(row, status="ok"):
         "urls_checked": 0,
     }
 
+def save_aux_warning(row: dict, check_name: str, target: str, error: str):
+    item = _base_result(row, status="warning")
+    item.update({
+        "url": target,
+        "url_path": check_name,
+        "is_summary": False,
+        "error": error,
+    })
+    save_result(item)
+
 async def check_one_domain(row, notify: bool = True):
     row = dict(row)
     row.setdefault("trigger_source", "worker")
@@ -213,14 +234,19 @@ async def check_one_domain(row, notify: bool = True):
     result = _base_result(row)
     errors = []
     worst = "ok"
+    dns_error = None
+    ssl_error = None
+    http_reachable = False
     try:
         if row.get("check_dns", True):
-            ips = resolve_domain(domain)
-            result["resolved_ips"] = ",".join(ips)
+            try:
+                ips = resolve_domain(domain)
+                result["resolved_ips"] = ",".join(ips)
+            except Exception as exc:
+                dns_error = f"DNS 检测失败：{exc}"
         if row.get("check_ping", True):
             result["ping_ok"], _ = ping_domain(domain)
         if row.get("check_http", True):
-            check_port(domain, port)
             paths = parse_url_paths(row.get("url_paths") or "/")
             response_times = []
             first_code = None
@@ -230,7 +256,13 @@ async def check_one_domain(row, notify: bool = True):
                 item = _base_result(row)
                 item.update({"url": url, "url_path": path, "is_summary": False})
                 try:
+                    port_error = None
+                    try:
+                        check_port(domain, port)
+                    except Exception as exc:
+                        port_error = str(exc)
                     code, rt, keyword_ok = await check_http(url, keyword=keyword)
+                    http_reachable = True
                     item["http_code"] = code
                     item["response_time_ms"] = rt
                     response_times.append(rt)
@@ -249,12 +281,15 @@ async def check_one_domain(row, notify: bool = True):
                         item["status"] = "ok"
                 except Exception as exc:
                     http_5xx_streak += 1
+                    detail = str(exc)
+                    if port_error:
+                        detail = f"TCP {port} 探测失败：{port_error}；HTTP 检测失败：{detail}"
                     if http_5xx_streak >= HTTP_5XX_ERROR_THRESHOLD:
                         item["status"] = "error"
-                        item["error"] = f"URL {path} 检测失败：{exc}；已连续 {http_5xx_streak} 次服务失败，状态升级为 error"
+                        item["error"] = f"URL {path} 检测失败：{detail}；已连续 {http_5xx_streak} 次服务失败，状态升级为 error"
                     else:
                         item["status"] = "warning"
-                        item["error"] = f"URL {path} 检测失败：{exc}；已连续 {http_5xx_streak} 次服务失败，未达 {HTTP_5XX_ERROR_THRESHOLD} 次前页面显示为 warning"
+                        item["error"] = f"URL {path} 检测失败：{detail}；已连续 {http_5xx_streak} 次服务失败，未达 {HTTP_5XX_ERROR_THRESHOLD} 次前页面显示为 warning"
                 if item["status"] != "ok":
                     errors.append(item["error"])
                     if item["status"] == "error":
@@ -264,15 +299,29 @@ async def check_one_domain(row, notify: bool = True):
                 save_result(item)
             result["urls_checked"] = len(paths)
             result["http_code"] = first_code
-            result["response_time_ms"] = max(response_times) if response_times else None
+            result["response_time_ms"] = summarize_response_time(response_times)
+        if dns_error and not http_reachable:
+            worst = merge_status(worst, "error")
+            errors.append(dns_error)
+        elif dns_error:
+            save_aux_warning(row, "DNS", f"dns://{domain}", dns_error)
         if row.get("check_ssl", True) and (protocol == "https" or port == 443):
-            result["ssl_expire_at"], result["ssl_days_left"] = check_ssl(domain, port)
-            if result["ssl_days_left"] < 0:
-                worst = "error"
-                errors.append(f"SSL 证书已过期 {-result['ssl_days_left']} 天")
-            elif result["ssl_days_left"] <= SSL_EXPIRE_WARN_DAYS and worst == "ok":
-                worst = "warning"
-                errors.append(f"SSL 证书即将过期，剩余 {result['ssl_days_left']} 天")
+            try:
+                result["ssl_expire_at"], result["ssl_days_left"] = check_ssl(domain, port)
+                if result["ssl_days_left"] < 0:
+                    worst = "error"
+                    errors.append(f"SSL 证书已过期 {-result['ssl_days_left']} 天")
+                elif result["ssl_days_left"] <= SSL_EXPIRE_WARN_DAYS and worst == "ok":
+                    worst = "warning"
+                    errors.append(f"SSL 证书即将过期，剩余 {result['ssl_days_left']} 天")
+            except Exception as exc:
+                ssl_error = f"SSL 检测失败：{exc}"
+        if ssl_error and not http_reachable:
+            worst = merge_status(worst, "error")
+            errors.append(ssl_error)
+        elif ssl_error:
+            ssl_target = f"ssl://{domain}" if port in (80, 443) else f"ssl://{domain}:{port}"
+            save_aux_warning(row, "SSL", ssl_target, ssl_error)
         if row.get("check_whois", True):
             result["whois_expire_at"], result["whois_days_left"], _ = check_whois_expire(domain)
             if result["whois_days_left"] is not None:

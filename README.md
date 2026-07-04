@@ -9,6 +9,7 @@ Python 域名全方位检测平台，包含 Web 面板、登录认证、多用�
 - 域名分组：支持按业务或环境分组。
 - 检测项：DNS A 记录、TCP 端口、HTTP/HTTPS、SSL 证书、Whois 到期、ICMP Ping。
 - 告警策略：失败阈值、恢复阈值、静默时间、升级时间。
+- 降噪策略：`warning` 默认需要更长连续触发次数才发送通知，域名级响应时间按已成功 URL 的平均值统计，避免单个慢路径放大成整站告警。
 - 通知渠道：企业微信、Telegram、both。
 - Metrics：`/metrics` 暴露 Prometheus 指标。
 - K8s：所有资源放在 `monitor` 命名空间，PostgreSQL PVC 使用 `efs-prod-sc`。

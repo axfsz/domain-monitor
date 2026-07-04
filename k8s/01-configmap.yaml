@@ -18,3 +18,5 @@ data:
   AGENT_REGION: "prod-k8s"
   PING_ENABLED: "true"
   TZ: "Asia/Shanghai"
+  NOTIFY_DEDUP_MINUTES: "30"
+  WARNING_FAIL_THRESHOLD: "10"

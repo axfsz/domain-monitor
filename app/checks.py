@@ -13,8 +13,26 @@ def resolve_domain(domain: str) -> list[str]:
     resolver = dns.resolver.Resolver()
     resolver.timeout = 5
     resolver.lifetime = 5
-    answers = resolver.resolve(domain, "A")
-    return [item.to_text() for item in answers]
+    ips = []
+    for record_type in ("A", "AAAA"):
+        try:
+            answers = resolver.resolve(domain, record_type)
+            ips.extend(item.to_text() for item in answers)
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers):
+            continue
+    if not ips:
+        try:
+            infos = socket.getaddrinfo(domain, None, proto=socket.IPPROTO_TCP)
+            ips.extend(info[4][0] for info in infos if info and info[4])
+        except socket.gaierror:
+            pass
+    deduped = []
+    for ip in ips:
+        if ip and ip not in deduped:
+            deduped.append(ip)
+    if deduped:
+        return deduped
+    raise dns.resolver.NoAnswer(f"{domain} 未解析到 A/AAAA 地址")
 
 def check_port(host: str, port: int, timeout: int = 5) -> int:
     start = time.time()
