@@ -1,7 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES, WARNING_FAIL_THRESHOLD
+import httpx
+from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES, WARNING_FAIL_THRESHOLD, HTTP_TIMEOUT
 from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
@@ -18,6 +19,14 @@ def summarize_response_time(response_times: list[int]) -> int | None:
     if not response_times:
         return None
     return round(sum(response_times) / len(response_times))
+
+def describe_check_exception(exc: Exception) -> str:
+    detail = str(exc).strip()
+    if isinstance(exc, httpx.TimeoutException):
+        return detail or f"HTTP 超时，已超过 {HTTP_TIMEOUT * 1000}ms"
+    if isinstance(exc, httpx.HTTPError):
+        return f"HTTP 异常：{detail}" if detail else f"HTTP 异常：{exc.__class__.__name__}"
+    return detail or exc.__class__.__name__
 
 def describe_http_4xx(code: int) -> str:
     if code == 400:
@@ -281,7 +290,7 @@ async def check_one_domain(row, notify: bool = True):
                         item["status"] = "ok"
                 except Exception as exc:
                     http_5xx_streak += 1
-                    detail = str(exc)
+                    detail = describe_check_exception(exc)
                     if port_error:
                         detail = f"TCP {port} 探测失败：{port_error}；HTTP 检测失败：{detail}"
                     if http_5xx_streak >= HTTP_5XX_ERROR_THRESHOLD:
