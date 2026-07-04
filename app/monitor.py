@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy import text
 import httpx
-from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES, WARNING_FAIL_THRESHOLD, HTTP_TIMEOUT
+from config import SSL_EXPIRE_WARN_DAYS, WHOIS_EXPIRE_WARN_DAYS, AGENT_NAME, AGENT_REGION, NOTIFY_DEDUP_MINUTES, WARNING_FAIL_THRESHOLD, ERROR_FAIL_THRESHOLD, HTTP_TIMEOUT
 from database import get_db
 from checks import resolve_domain, check_port, check_ssl, check_http, check_whois_expire, ping_domain, parse_url_paths, parse_expected_statuses
 from notify import send_notice
@@ -131,10 +131,10 @@ async def process_alert(result: dict, policy: dict, notify: bool = True):
     domain_id = result["domain_id"]
     status = result["status"]
     current_error = result.get("error") or ""
-    fail_threshold = int(policy.get("fail_threshold") or 3)
     recover_threshold = int(policy.get("recover_threshold") or 2)
     escalation_minutes = int(policy.get("escalation_minutes") or 15)
-    warning_fail_threshold = max(fail_threshold, WARNING_FAIL_THRESHOLD)
+    warning_fail_threshold = max(1, WARNING_FAIL_THRESHOLD)
+    error_fail_threshold = max(1, ERROR_FAIL_THRESHOLD)
     should_alert = False
     recovered = False
     should_escalate = False
@@ -146,7 +146,7 @@ async def process_alert(result: dict, policy: dict, notify: bool = True):
         old_first_failed_at = state["first_failed_at"] if state else None
         old_escalated = bool(state["escalated"]) if state else False
         if status in ("error", "warning"):
-            current_fail_threshold = warning_fail_threshold if status == "warning" else fail_threshold
+            current_fail_threshold = warning_fail_threshold if status == "warning" else error_fail_threshold
             fail_count = old_fail_count + 1
             success_count = 0
             first_failed_at = old_first_failed_at or now_local_naive()
